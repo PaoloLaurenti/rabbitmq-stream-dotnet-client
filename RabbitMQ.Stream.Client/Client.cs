@@ -14,6 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
+using RabbitMQ.Stream.Client.DeliverChecksum;
 
 namespace RabbitMQ.Stream.Client
 {
@@ -62,6 +63,16 @@ namespace RabbitMQ.Stream.Client
         public SslOption Ssl { get; set; } = new SslOption();
 
         public AddressResolver AddressResolver { get; set; } = null;
+
+        private static readonly NoOpDeliverChecksumCrc32 s_noOpDeliverChecksumCrc32 = new();
+
+        private IDeliverChecksumCrc32 _deliverChecksumCrc32 = s_noOpDeliverChecksumCrc32;
+
+        public IDeliverChecksumCrc32 DeliverChecksumCrc32
+        {
+            get => _deliverChecksumCrc32;
+            set => _deliverChecksumCrc32 = value ?? s_noOpDeliverChecksumCrc32;
+        }
     }
 
     public readonly struct OutgoingMsg : ICommand
@@ -162,6 +173,8 @@ namespace RabbitMQ.Stream.Client
 
             private set => isClosed = value;
         }
+
+        internal DeliverChecksumFailedListener DeliverChecksumFailedListener { private get; set; }
 
         private Client(ClientParameters parameters)
         {
@@ -376,9 +389,17 @@ namespace RabbitMQ.Stream.Client
 
                     break;
                 case Deliver.Key:
+                    var deliverChecksumCrc32 = Parameters.DeliverChecksumCrc32;
                     Deliver.Read(frame, out var deliver);
-                    var deliverHandler = consumers[deliver.SubscriptionId];
-                    await deliverHandler(deliver).ConfigureAwait(false);
+                    var result = deliverChecksumCrc32.Check(deliver);
+                    if (result.IsOK)
+                    {
+                        var deliverHandler = consumers[deliver.SubscriptionId];
+                        await deliverHandler(deliver).ConfigureAwait(false);
+                        break;
+                    }
+
+                    await DeliverChecksumFailedListener.Notify(deliver, result.ComputedChecksum, result.ExpectedChecksum);
                     break;
                 case PublishError.Key:
                     PublishError.Read(frame, out var error);

@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Stream.Client;
+using RabbitMQ.Stream.Client.DeliverChecksum;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -356,6 +357,46 @@ namespace Tests
         }
 
         [Fact]
+        public async void ConsumerShouldNotReceiveDeliveryWhenDeliverChecksumIsNotOK()
+        {
+            var stream = Guid.NewGuid().ToString();
+            var failingComputedChecksum = 42;
+            var failingExpectedChecksum = 43;
+            var alwaysFailingChecksum = new AlwaysFailingDeliverChecksumCrc32(failingComputedChecksum, failingExpectedChecksum);
+            var clientParameters = new ClientParameters { DeliverChecksumCrc32 = alwaysFailingChecksum };
+            var client = await Client.Create(clientParameters);
+            var deliverChecksumFailedNotification = new TaskCompletionSource<Deliver>();
+            var deliverChecksumFailedListenerSpy = new DeliverChecksumFailedListenerSpy(deliverChecksumFailedNotification);
+            client.DeliverChecksumFailedListener = deliverChecksumFailedListenerSpy;
+            await client.CreateStream(stream, new Dictionary<string, string>());
+            var offsetType = new OffsetTypeFirst();
+            var initialCredit = 1;
+            var delivery = new TaskCompletionSource<Deliver>();
+            Func<Deliver, Task> deliverHandler = deliver =>
+            {
+                delivery.SetResult(deliver);
+                return Task.CompletedTask;
+            };
+            var (subId, subscribeResponse) = await client.Subscribe(stream, offsetType, (ushort)initialCredit,
+                new Dictionary<string, string>(), deliverHandler);
+            Assert.Equal(ResponseCode.Ok, subscribeResponse.ResponseCode);
+            var publisherRef = Guid.NewGuid().ToString();
+            var (publisherId, declarePubResp) = await client.DeclarePublisher(publisherRef, stream, _ => { }, _ => { });
+            await client.Publish(new Publish(publisherId, new List<(ulong, Message)>
+            {
+                (0, new Message(Encoding.UTF8.GetBytes("hi")))
+            }));
+            new Utils<Deliver>(testOutputHelper).WaitUntilTaskCompletes(delivery, false);
+            new Utils<Deliver>(testOutputHelper).WaitUntilTaskCompletes(deliverChecksumFailedNotification, true);
+
+            Assert.Equal(failingComputedChecksum, deliverChecksumFailedListenerSpy.ComputedChecksum);
+            Assert.Equal(failingExpectedChecksum, deliverChecksumFailedListenerSpy.ExpectedChecksum);
+
+            await client.DeleteStream(stream);
+            await client.Close("done");
+        }
+
+        [Fact]
         public async void UnsubscribedConsumerShouldNotReceiveDelivery()
         {
             var stream = Guid.NewGuid().ToString();
@@ -396,6 +437,47 @@ namespace Tests
             await Assert.ThrowsAsync<VirtualHostAccessFailureException>(
                 async () => { await Client.Create(clientParameters); }
             );
+        }
+    }
+
+    internal sealed class AlwaysFailingDeliverChecksumCrc32 : IDeliverChecksumCrc32
+    {
+        private readonly int _failingComputedChecksum;
+        private readonly int _failingExpectedChecksum;
+
+        public AlwaysFailingDeliverChecksumCrc32(int failingComputedChecksum, int failingExpectedChecksum)
+        {
+            _failingComputedChecksum =  failingComputedChecksum;
+            _failingExpectedChecksum = failingExpectedChecksum;
+        }
+
+        DeliverChecksumCrc32Result IDeliverChecksumCrc32.Check(Deliver deliver)
+        {
+            return new DeliverChecksumCrc32Result(false, _failingComputedChecksum, _failingExpectedChecksum);
+        }
+    }
+
+    internal sealed class DeliverChecksumFailedListenerSpy : DeliverChecksumFailedListener
+    {
+        private readonly TaskCompletionSource<Deliver> _deliverChecksumFailedNotification;
+
+        public DeliverChecksumFailedListenerSpy(TaskCompletionSource<Deliver> deliverChecksumFailedNotification)
+        {
+            _deliverChecksumFailedNotification = deliverChecksumFailedNotification;
+        }
+
+        internal Deliver Deliver { get; private set; }
+        internal int ComputedChecksum { get; private set; }
+        internal int ExpectedChecksum { get; private set; }
+
+        internal override Task Notify<T>(Deliver deliver, T computedChecksum, T expectedChecksum)
+        {
+            Deliver = deliver;
+            ComputedChecksum = Convert.ToInt32(computedChecksum);
+            ExpectedChecksum = Convert.ToInt32(expectedChecksum);
+
+            _deliverChecksumFailedNotification.SetResult(deliver);
+            return Task.CompletedTask;
         }
     }
 }

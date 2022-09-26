@@ -211,6 +211,8 @@ RabbitMQ.Stream.Client.ClientParameters.AddressResolver.get -> RabbitMQ.Stream.C
 RabbitMQ.Stream.Client.ClientParameters.AddressResolver.set -> void
 RabbitMQ.Stream.Client.ClientParameters.ClientProvidedName.get -> string
 RabbitMQ.Stream.Client.ClientParameters.ClientProvidedName.set -> void
+RabbitMQ.Stream.Client.ClientParameters.DeliverChecksumCrc32.get -> RabbitMQ.Stream.Client.DeliverChecksum.IDeliverChecksumCrc32
+RabbitMQ.Stream.Client.ClientParameters.DeliverChecksumCrc32.set -> void
 RabbitMQ.Stream.Client.ClientParameters.Endpoint.get -> System.Net.EndPoint
 RabbitMQ.Stream.Client.ClientParameters.Endpoint.set -> void
 RabbitMQ.Stream.Client.ClientParameters.Heartbeat.get -> System.TimeSpan
@@ -352,6 +354,10 @@ RabbitMQ.Stream.Client.Deliver.Messages.get -> System.Collections.Generic.IEnume
 RabbitMQ.Stream.Client.Deliver.SizeNeeded.get -> int
 RabbitMQ.Stream.Client.Deliver.SubscriptionId.get -> byte
 RabbitMQ.Stream.Client.Deliver.Write(System.Span<byte> span) -> int
+RabbitMQ.Stream.Client.DeliverChecksum.DeliverChecksumCrc32Result
+RabbitMQ.Stream.Client.DeliverChecksum.DeliverChecksumCrc32Result.DeliverChecksumCrc32Result() -> void
+RabbitMQ.Stream.Client.DeliverChecksum.DeliverChecksumCrc32Result.DeliverChecksumCrc32Result(bool isOK, int computedChecksum, int expectedChecksum) -> void
+RabbitMQ.Stream.Client.DeliverChecksum.IDeliverChecksumCrc32
 RabbitMQ.Stream.Client.GenericProtocolException
 RabbitMQ.Stream.Client.GenericProtocolException.GenericProtocolException(RabbitMQ.Stream.Client.ResponseCode responseCode, string s) -> void
 RabbitMQ.Stream.Client.GzipCompressionCodec
