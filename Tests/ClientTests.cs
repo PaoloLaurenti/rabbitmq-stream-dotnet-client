@@ -363,11 +363,20 @@ namespace Tests
             var failingComputedChecksum = 42;
             var failingExpectedChecksum = 43;
             var alwaysFailingChecksum = new AlwaysFailingDeliverChecksumCrc32(failingComputedChecksum, failingExpectedChecksum);
-            var clientParameters = new ClientParameters { DeliverChecksumCrc32 = alwaysFailingChecksum };
+            var clientParameters = new ClientParameters { DeliverCrc32Checksum = alwaysFailingChecksum };
             var client = await Client.Create(clientParameters);
             var deliverChecksumFailedNotification = new TaskCompletionSource<Deliver>();
-            var deliverChecksumFailedListenerSpy = new DeliverChecksumFailedListenerSpy(deliverChecksumFailedNotification);
-            client.DeliverChecksumFailedListener = deliverChecksumFailedListenerSpy;
+            // var deliverChecksumFailedListenerSpy = new DeliverChecksumFailedListenerSpy(deliverChecksumFailedNotification);
+            var actualFailingComputedChecksum = 0;
+            var actualFailingExpectedChecksum = 0;
+            Func<Deliver, int, int, Task> deliverChecksumFailedNotifierSpy = (deliver, computedChecksum, expectedChecksum) =>
+            {
+                actualFailingComputedChecksum = computedChecksum;
+                actualFailingExpectedChecksum = expectedChecksum;
+                deliverChecksumFailedNotification.SetResult(deliver);
+                return Task.CompletedTask;
+            };
+            client.DeliverCrc32ChecksumFailedNotifier = deliverChecksumFailedNotifierSpy;
             await client.CreateStream(stream, new Dictionary<string, string>());
             var offsetType = new OffsetTypeFirst();
             var initialCredit = 1;
@@ -389,8 +398,8 @@ namespace Tests
             new Utils<Deliver>(testOutputHelper).WaitUntilTaskCompletes(delivery, false);
             new Utils<Deliver>(testOutputHelper).WaitUntilTaskCompletes(deliverChecksumFailedNotification, true);
 
-            Assert.Equal(failingComputedChecksum, deliverChecksumFailedListenerSpy.ComputedChecksum);
-            Assert.Equal(failingExpectedChecksum, deliverChecksumFailedListenerSpy.ExpectedChecksum);
+            Assert.Equal(failingComputedChecksum, actualFailingComputedChecksum);
+            Assert.Equal(failingExpectedChecksum, actualFailingExpectedChecksum);
 
             await client.DeleteStream(stream);
             await client.Close("done");
@@ -440,44 +449,20 @@ namespace Tests
         }
     }
 
-    internal sealed class AlwaysFailingDeliverChecksumCrc32 : IDeliverChecksumCrc32
+    internal sealed class AlwaysFailingDeliverChecksumCrc32 : IDeliverCrc32Checksum
     {
         private readonly int _failingComputedChecksum;
         private readonly int _failingExpectedChecksum;
 
         public AlwaysFailingDeliverChecksumCrc32(int failingComputedChecksum, int failingExpectedChecksum)
         {
-            _failingComputedChecksum =  failingComputedChecksum;
+            _failingComputedChecksum = failingComputedChecksum;
             _failingExpectedChecksum = failingExpectedChecksum;
         }
 
-        DeliverChecksumCrc32Result IDeliverChecksumCrc32.Check(Deliver deliver)
+        DeliverCrc32ChecksumResult IDeliverCrc32Checksum.Check(Deliver deliver)
         {
-            return new DeliverChecksumCrc32Result(false, _failingComputedChecksum, _failingExpectedChecksum);
-        }
-    }
-
-    internal sealed class DeliverChecksumFailedListenerSpy : DeliverChecksumFailedListener
-    {
-        private readonly TaskCompletionSource<Deliver> _deliverChecksumFailedNotification;
-
-        public DeliverChecksumFailedListenerSpy(TaskCompletionSource<Deliver> deliverChecksumFailedNotification)
-        {
-            _deliverChecksumFailedNotification = deliverChecksumFailedNotification;
-        }
-
-        internal Deliver Deliver { get; private set; }
-        internal int ComputedChecksum { get; private set; }
-        internal int ExpectedChecksum { get; private set; }
-
-        internal override Task Notify<T>(Deliver deliver, T computedChecksum, T expectedChecksum)
-        {
-            Deliver = deliver;
-            ComputedChecksum = Convert.ToInt32(computedChecksum);
-            ExpectedChecksum = Convert.ToInt32(expectedChecksum);
-
-            _deliverChecksumFailedNotification.SetResult(deliver);
-            return Task.CompletedTask;
+            return new DeliverCrc32ChecksumResult(false, _failingComputedChecksum, _failingExpectedChecksum);
         }
     }
 }

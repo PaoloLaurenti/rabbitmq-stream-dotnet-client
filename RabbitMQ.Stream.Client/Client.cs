@@ -64,14 +64,14 @@ namespace RabbitMQ.Stream.Client
 
         public AddressResolver AddressResolver { get; set; } = null;
 
-        private static readonly NoOpDeliverChecksumCrc32 s_noOpDeliverChecksumCrc32 = new();
+        private static readonly NoOpDeliverCrc32Checksum s_noOpDeliverCrc32Checksum = new();
 
-        private IDeliverChecksumCrc32 _deliverChecksumCrc32 = s_noOpDeliverChecksumCrc32;
+        private IDeliverCrc32Checksum _deliverCrc32Checksum = s_noOpDeliverCrc32Checksum;
 
-        public IDeliverChecksumCrc32 DeliverChecksumCrc32
+        public IDeliverCrc32Checksum DeliverCrc32Checksum
         {
-            get => _deliverChecksumCrc32;
-            set => _deliverChecksumCrc32 = value ?? s_noOpDeliverChecksumCrc32;
+            get => _deliverCrc32Checksum;
+            set => _deliverCrc32Checksum = value ?? s_noOpDeliverCrc32Checksum;
         }
     }
 
@@ -174,7 +174,7 @@ namespace RabbitMQ.Stream.Client
             private set => isClosed = value;
         }
 
-        internal DeliverChecksumFailedListener DeliverChecksumFailedListener { private get; set; }
+        internal Func<Deliver, int, int, Task> DeliverCrc32ChecksumFailedNotifier { private get; set; }
 
         private Client(ClientParameters parameters)
         {
@@ -389,7 +389,7 @@ namespace RabbitMQ.Stream.Client
 
                     break;
                 case Deliver.Key:
-                    var deliverChecksumCrc32 = Parameters.DeliverChecksumCrc32;
+                    var deliverChecksumCrc32 = Parameters.DeliverCrc32Checksum;
                     Deliver.Read(frame, out var deliver);
                     var result = deliverChecksumCrc32.Check(deliver);
                     if (result.IsOK)
@@ -399,7 +399,8 @@ namespace RabbitMQ.Stream.Client
                         break;
                     }
 
-                    await DeliverChecksumFailedListener.Notify(deliver, result.ComputedChecksum, result.ExpectedChecksum);
+                    await DeliverCrc32ChecksumFailedNotifier(deliver, result.ComputedChecksum, result.ExpectedChecksum)
+                        .ConfigureAwait(false);
                     break;
                 case PublishError.Key:
                     PublishError.Read(frame, out var error);

@@ -4,11 +4,11 @@
 
 namespace RabbitMQ.Stream.Client.DeliverChecksum
 {
-    internal sealed class NoOpDeliverChecksumCrc32 : IDeliverChecksumCrc32
+    internal sealed class NoOpDeliverCrc32Checksum : IDeliverCrc32Checksum
     {
-        private static readonly DeliverChecksumCrc32Result s_result = new(true, 0, 0);
+        private static readonly DeliverCrc32ChecksumResult s_result = new(true, 0, 0);
         
-        DeliverChecksumCrc32Result IDeliverChecksumCrc32.Check(Deliver deliver)
+        DeliverCrc32ChecksumResult IDeliverCrc32Checksum.Check(Deliver deliver)
         {
             return s_result;
         }

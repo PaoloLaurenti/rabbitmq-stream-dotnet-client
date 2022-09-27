@@ -4,8 +4,8 @@
 
 namespace RabbitMQ.Stream.Client.DeliverChecksum
 {
-    public interface IDeliverChecksumCrc32
+    public interface IDeliverCrc32Checksum
     {
-        internal DeliverChecksumCrc32Result Check(Deliver deliver);
+        internal DeliverCrc32ChecksumResult Check(Deliver deliver);
     }
 }

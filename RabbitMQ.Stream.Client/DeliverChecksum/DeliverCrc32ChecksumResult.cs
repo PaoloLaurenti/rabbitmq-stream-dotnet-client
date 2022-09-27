@@ -4,9 +4,9 @@
 
 namespace RabbitMQ.Stream.Client.DeliverChecksum
 {
-    public readonly struct DeliverChecksumCrc32Result
+    public readonly struct DeliverCrc32ChecksumResult
     {
-        public DeliverChecksumCrc32Result(bool isOK, int computedChecksum, int expectedChecksum)
+        public DeliverCrc32ChecksumResult(bool isOK, int computedChecksum, int expectedChecksum)
         {
             IsOK = isOK;
             ComputedChecksum = computedChecksum;
