@@ -366,7 +366,6 @@ namespace Tests
             var clientParameters = new ClientParameters { DeliverCrc32Checksum = alwaysFailingChecksum };
             var client = await Client.Create(clientParameters);
             var deliverChecksumFailedNotification = new TaskCompletionSource<Deliver>();
-            // var deliverChecksumFailedListenerSpy = new DeliverChecksumFailedListenerSpy(deliverChecksumFailedNotification);
             var actualFailingComputedChecksum = 0;
             var actualFailingExpectedChecksum = 0;
             Func<Deliver, int, int, Task> deliverChecksumFailedNotifierSpy = (deliver, computedChecksum, expectedChecksum) =>

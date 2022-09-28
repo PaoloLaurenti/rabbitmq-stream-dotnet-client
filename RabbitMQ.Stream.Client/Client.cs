@@ -138,6 +138,7 @@ namespace RabbitMQ.Stream.Client
 
         private int messagesSent;
         private int confirmFrames;
+        private Func<Deliver, int, int, Task> _deliverCrc32ChecksumFailedNotifier;
         public IDictionary<string, string> ConnectionProperties { get; private set; }
         public ClientParameters Parameters { get; set; }
 
@@ -174,7 +175,11 @@ namespace RabbitMQ.Stream.Client
             private set => isClosed = value;
         }
 
-        internal Func<Deliver, int, int, Task> DeliverCrc32ChecksumFailedNotifier { private get; set; }
+        internal Func<Deliver, int, int, Task> DeliverCrc32ChecksumFailedNotifier
+        {
+            private get => _deliverCrc32ChecksumFailedNotifier;
+            set => _deliverCrc32ChecksumFailedNotifier = value ?? ((deliver, computed, expected) => Task.CompletedTask);
+        }
 
         private Client(ClientParameters parameters)
         {
@@ -399,8 +404,7 @@ namespace RabbitMQ.Stream.Client
                         break;
                     }
 
-                    await DeliverCrc32ChecksumFailedNotifier(deliver, result.ComputedChecksum, result.ExpectedChecksum)
-                        .ConfigureAwait(false);
+                    await NotifyDeliverCrc32ChecksumFailed(deliver, result).ConfigureAwait(false);
                     break;
                 case PublishError.Key:
                     PublishError.Read(frame, out var error);
@@ -518,6 +522,15 @@ namespace RabbitMQ.Stream.Client
             {
                 ((ManualResetValueTaskSource<T>)tsc).SetResult(command);
             }
+        }
+
+        private async Task NotifyDeliverCrc32ChecksumFailed(Deliver deliver, DeliverCrc32ChecksumResult result)
+        {
+            LogEventSource
+                .Log
+                .LogError($"Deliver CRC32 checksum failed for subscription {deliver.SubscriptionId} - computed {result.ComputedChecksum} - expected {result.ExpectedChecksum}.");
+            await DeliverCrc32ChecksumFailedNotifier(deliver, result.ComputedChecksum, result.ExpectedChecksum)
+                    .ConfigureAwait(false);
         }
 
         private async ValueTask<bool> SendHeartBeat()
