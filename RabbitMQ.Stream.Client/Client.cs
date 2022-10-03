@@ -138,7 +138,7 @@ namespace RabbitMQ.Stream.Client
 
         private int messagesSent;
         private int confirmFrames;
-        private Func<Deliver, int, int, Task> _deliverCrc32ChecksumFailedNotifier;
+        private Func<Task> _deliverCrc32ChecksumFailedNotifier;
         public IDictionary<string, string> ConnectionProperties { get; private set; }
         public ClientParameters Parameters { get; set; }
 
@@ -175,10 +175,10 @@ namespace RabbitMQ.Stream.Client
             private set => isClosed = value;
         }
 
-        internal Func<Deliver, int, int, Task> DeliverCrc32ChecksumFailedNotifier
+        internal Func<Task> DeliverCrc32ChecksumFailedNotifier
         {
             private get => _deliverCrc32ChecksumFailedNotifier;
-            set => _deliverCrc32ChecksumFailedNotifier = value ?? ((deliver, computed, expected) => Task.CompletedTask);
+            set => _deliverCrc32ChecksumFailedNotifier = value ?? (() => Task.CompletedTask);
         }
 
         private Client(ClientParameters parameters)
@@ -395,16 +395,17 @@ namespace RabbitMQ.Stream.Client
                     break;
                 case Deliver.Key:
                     var deliverChecksumCrc32 = Parameters.DeliverCrc32Checksum;
-                    Deliver.Read(frame, out var deliver);
-                    var result = deliverChecksumCrc32.Check(deliver);
-                    if (result.IsOK)
+                    Deliver.Read(frame, deliverChecksumCrc32, out var maybeDeliver);
+
+                    if (maybeDeliver.HasValue)
                     {
+                        var deliver = maybeDeliver.Value;
                         var deliverHandler = consumers[deliver.SubscriptionId];
                         await deliverHandler(deliver).ConfigureAwait(false);
                         break;
                     }
 
-                    await NotifyDeliverCrc32ChecksumFailed(deliver, result).ConfigureAwait(false);
+                    await NotifyDeliverCrc32ChecksumFailed().ConfigureAwait(false);
                     break;
                 case PublishError.Key:
                     PublishError.Read(frame, out var error);
@@ -524,13 +525,10 @@ namespace RabbitMQ.Stream.Client
             }
         }
 
-        private async Task NotifyDeliverCrc32ChecksumFailed(Deliver deliver, DeliverCrc32ChecksumResult result)
+        private async Task NotifyDeliverCrc32ChecksumFailed()
         {
-            LogEventSource
-                .Log
-                .LogError($"Deliver CRC32 checksum failed for subscription {deliver.SubscriptionId} - computed {result.ComputedChecksum} - expected {result.ExpectedChecksum}.");
-            await DeliverCrc32ChecksumFailedNotifier(deliver, result.ComputedChecksum, result.ExpectedChecksum)
-                    .ConfigureAwait(false);
+            LogEventSource.Log.LogError($"Deliver CRC32 checksum failed");
+            await DeliverCrc32ChecksumFailedNotifier().ConfigureAwait(false);
         }
 
         private async ValueTask<bool> SendHeartBeat()

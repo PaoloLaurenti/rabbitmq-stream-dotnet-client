@@ -2,15 +2,15 @@
 // 2.0, and the Mozilla Public License, version 2.0.
 // Copyright (c) 2007-2020 VMware, Inc.
 
+using System.Buffers;
+
 namespace RabbitMQ.Stream.Client.DeliverChecksum
 {
     internal sealed class NoOpDeliverCrc32Checksum : IDeliverCrc32Checksum
     {
-        private static readonly DeliverCrc32ChecksumResult s_result = new(true, 0, 0);
-        
-        DeliverCrc32ChecksumResult IDeliverCrc32Checksum.Check(Deliver deliver)
+        bool IDeliverCrc32Checksum.Check(ReadOnlySequence<byte> data, uint dataLen, uint expectedCrc)
         {
-            return s_result;
+            return true;
         }
     }
 }

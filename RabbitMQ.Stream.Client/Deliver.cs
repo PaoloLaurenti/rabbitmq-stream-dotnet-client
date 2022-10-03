@@ -5,6 +5,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using RabbitMQ.Stream.Client.DeliverChecksum;
 
 namespace RabbitMQ.Stream.Client
 {
@@ -82,13 +83,15 @@ namespace RabbitMQ.Stream.Client
             throw new NotImplementedException();
         }
 
-        internal static int Read(ReadOnlySequence<byte> frame, out Deliver command)
+        internal static int Read(ReadOnlySequence<byte> frame, IDeliverCrc32Checksum deliverChecksumCrc32, out Deliver? command)
         {
             var offset = WireFormatting.ReadUInt16(frame, out _);
             offset += WireFormatting.ReadUInt16(frame.Slice(offset), out _);
             offset += WireFormatting.ReadByte(frame.Slice(offset), out var subscriptionId);
-            offset += Chunk.Read(frame.Slice(offset), out var chunk);
-            command = new Deliver(subscriptionId, chunk);
+            offset += Chunk.Read(frame.Slice(offset), deliverChecksumCrc32, out var maybeChunk);
+            command = maybeChunk.HasValue 
+              ? new Deliver(subscriptionId, maybeChunk.Value)
+              : null;
             return offset;
         }
     }
@@ -164,7 +167,7 @@ namespace RabbitMQ.Stream.Client
             long timestamp,
             ulong epoch,
             ulong chunkId,
-            int crc,
+            uint crc,
             ReadOnlySequence<byte> data, bool hasSubEntries)
         {
             MagicVersion = magicVersion;
@@ -187,10 +190,10 @@ namespace RabbitMQ.Stream.Client
         public long Timestamp { get; }
         public ulong Epoch { get; }
         public ulong ChunkId { get; }
-        public int Crc { get; }
+        public uint Crc { get; }
         public ReadOnlySequence<byte> Data { get; }
 
-        internal static int Read(ReadOnlySequence<byte> seq, out Chunk chunk)
+        internal static int Read(ReadOnlySequence<byte> seq, IDeliverCrc32Checksum deliverChecksumCrc32, out Chunk? chunk)
         {
             var offset = WireFormatting.ReadByte(seq, out var magicVersion);
             offset += WireFormatting.ReadByte(seq.Slice(offset), out _);
@@ -199,7 +202,7 @@ namespace RabbitMQ.Stream.Client
             offset += WireFormatting.ReadInt64(seq.Slice(offset), out var timestamp);
             offset += WireFormatting.ReadUInt64(seq.Slice(offset), out var epoch);
             offset += WireFormatting.ReadUInt64(seq.Slice(offset), out var chunkId);
-            offset += WireFormatting.ReadInt32(seq.Slice(offset), out var crc);
+            offset += WireFormatting.ReadUInt32(seq.Slice(offset), out var crc);
             offset += WireFormatting.ReadUInt32(seq.Slice(offset), out var dataLen);
             offset += WireFormatting.ReadUInt32(seq.Slice(offset), out _);
             offset += 4; // reserved
@@ -211,8 +214,12 @@ namespace RabbitMQ.Stream.Client
             var hasSubEntries = (entryType & 0x80) != 0;
             var data = seq.Slice(offset, dataLen);
             offset += (int)dataLen;
-            chunk = new Chunk(magicVersion, numEntries, numRecords, timestamp, epoch, chunkId, crc, data,
-                hasSubEntries);
+
+            chunk = deliverChecksumCrc32.Check(data, dataLen, crc)
+                ? new Chunk(magicVersion, numEntries, numRecords, timestamp, epoch, chunkId, crc, data,
+                hasSubEntries)
+                : null;
+
             return offset;
         }
     }

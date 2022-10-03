@@ -3,6 +3,7 @@
 // Copyright (c) 2007-2020 VMware, Inc.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -360,19 +361,13 @@ namespace Tests
         public async void ConsumerShouldNotReceiveDeliveryWhenDeliverChecksumIsNotOK()
         {
             var stream = Guid.NewGuid().ToString();
-            var failingComputedChecksum = 42;
-            var failingExpectedChecksum = 43;
-            var alwaysFailingChecksum = new AlwaysFailingDeliverChecksumCrc32(failingComputedChecksum, failingExpectedChecksum);
+            var alwaysFailingChecksum = new AlwaysFailingDeliverChecksumCrc32();
             var clientParameters = new ClientParameters { DeliverCrc32Checksum = alwaysFailingChecksum };
             var client = await Client.Create(clientParameters);
-            var deliverChecksumFailedNotification = new TaskCompletionSource<Deliver>();
-            var actualFailingComputedChecksum = 0;
-            var actualFailingExpectedChecksum = 0;
-            Func<Deliver, int, int, Task> deliverChecksumFailedNotifierSpy = (deliver, computedChecksum, expectedChecksum) =>
+            var deliverChecksumFailedNotification = new TaskCompletionSource<int>();
+            Func<Task> deliverChecksumFailedNotifierSpy = () =>
             {
-                actualFailingComputedChecksum = computedChecksum;
-                actualFailingExpectedChecksum = expectedChecksum;
-                deliverChecksumFailedNotification.SetResult(deliver);
+                deliverChecksumFailedNotification.SetResult(0);
                 return Task.CompletedTask;
             };
             client.DeliverCrc32ChecksumFailedNotifier = deliverChecksumFailedNotifierSpy;
@@ -395,10 +390,7 @@ namespace Tests
                 (0, new Message(Encoding.UTF8.GetBytes("hi")))
             }));
             new Utils<Deliver>(testOutputHelper).WaitUntilTaskCompletes(delivery, false);
-            new Utils<Deliver>(testOutputHelper).WaitUntilTaskCompletes(deliverChecksumFailedNotification, true);
-
-            Assert.Equal(failingComputedChecksum, actualFailingComputedChecksum);
-            Assert.Equal(failingExpectedChecksum, actualFailingExpectedChecksum);
+            new Utils<int>(testOutputHelper).WaitUntilTaskCompletes(deliverChecksumFailedNotification, true);
 
             await client.DeleteStream(stream);
             await client.Close("done");
@@ -450,18 +442,9 @@ namespace Tests
 
     internal sealed class AlwaysFailingDeliverChecksumCrc32 : IDeliverCrc32Checksum
     {
-        private readonly int _failingComputedChecksum;
-        private readonly int _failingExpectedChecksum;
-
-        public AlwaysFailingDeliverChecksumCrc32(int failingComputedChecksum, int failingExpectedChecksum)
+        bool IDeliverCrc32Checksum.Check(ReadOnlySequence<byte> data, uint dataLen, uint expectedCrc)
         {
-            _failingComputedChecksum = failingComputedChecksum;
-            _failingExpectedChecksum = failingExpectedChecksum;
-        }
-
-        DeliverCrc32ChecksumResult IDeliverCrc32Checksum.Check(Deliver deliver)
-        {
-            return new DeliverCrc32ChecksumResult(false, _failingComputedChecksum, _failingExpectedChecksum);
+            return false;
         }
     }
 }
