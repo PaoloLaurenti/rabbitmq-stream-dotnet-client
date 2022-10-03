@@ -89,7 +89,7 @@ namespace RabbitMQ.Stream.Client
             offset += WireFormatting.ReadUInt16(frame.Slice(offset), out _);
             offset += WireFormatting.ReadByte(frame.Slice(offset), out var subscriptionId);
             offset += Chunk.Read(frame.Slice(offset), deliverChecksumCrc32, out var maybeChunk);
-            command = maybeChunk.HasValue 
+            command = maybeChunk.HasValue
               ? new Deliver(subscriptionId, maybeChunk.Value)
               : null;
             return offset;
@@ -216,8 +216,7 @@ namespace RabbitMQ.Stream.Client
             offset += (int)dataLen;
 
             chunk = deliverChecksumCrc32.Check(data, dataLen, crc)
-                ? new Chunk(magicVersion, numEntries, numRecords, timestamp, epoch, chunkId, crc, data,
-                hasSubEntries)
+                ? new Chunk(magicVersion, numEntries, numRecords, timestamp, epoch, chunkId, crc, data, hasSubEntries)
                 : null;
 
             return offset;
